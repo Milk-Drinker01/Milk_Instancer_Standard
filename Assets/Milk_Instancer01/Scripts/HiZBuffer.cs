@@ -25,7 +25,8 @@ public class HiZBuffer : MonoBehaviour
     private RenderTexture m_ShadowmapCopy;
     private RenderTargetIdentifier m_shadowmap;
     private CommandBuffer m_lightShadowCommandBuffer;
-    
+    Camera mainCamera;
+
     // Public Properties
     public int DebugLodLevel { get; set; }
     public Vector2 TextureSize { get { return m_textureSize; } }
@@ -45,26 +46,24 @@ public class HiZBuffer : MonoBehaviour
 
     #region MonoBehaviour
 
-    private void Awake()
+    public void init(MilkInstancer instancer, Shader hizShader, Shader _debug)
     {
-        m_indirectRenderer = GetComponent<MilkInstancer>();
+        m_indirectRenderer = instancer;
+        generateBufferShader = hizShader;
+        debugShader = _debug;
+        mainCamera = GetComponent<Camera>();
         m_generateBufferMaterial = new Material(generateBufferShader);
         debug();
-        m_indirectRenderer.mainCam.depthTextureMode = DepthTextureMode.Depth;
-    }
-
-    public void Start()
-    {
-
+        mainCamera.depthTextureMode = DepthTextureMode.Depth;
     }
 
     private void OnDisable()
     {
-        if (m_indirectRenderer.mainCam != null)
+        if (mainCamera != null)
         {
             if (m_CommandBuffer != null)
             {
-                m_indirectRenderer.mainCam.RemoveCommandBuffer(m_CameraEvent, m_CommandBuffer);
+                mainCamera.RemoveCommandBuffer(m_CameraEvent, m_CommandBuffer);
                 m_CommandBuffer = null;
             }
         }
@@ -83,7 +82,7 @@ public class HiZBuffer : MonoBehaviour
             m_HiZDepthTexture.Release();
         }
         
-        int size = (int)Mathf.Max((float)m_indirectRenderer.mainCam.pixelWidth, (float)m_indirectRenderer.mainCam.pixelHeight);
+        int size = (int)Mathf.Max((float)mainCamera.pixelWidth, (float)mainCamera.pixelHeight);
         size = (int)Mathf.Min((float)Mathf.NextPowerOfTwo(size), (float)MAXIMUM_BUFFER_SIZE);
         m_textureSize.x = size;
         m_textureSize.y = size;
@@ -98,17 +97,15 @@ public class HiZBuffer : MonoBehaviour
 
     private void OnPreRender()
     {
-        int size = (int)Mathf.Max((float)m_indirectRenderer.mainCam.pixelWidth, (float)m_indirectRenderer.mainCam.pixelHeight);
+        int size = (int)Mathf.Max((float)mainCamera.pixelWidth, (float)mainCamera.pixelHeight);
         size = (int)Mathf.Min((float)Mathf.NextPowerOfTwo(size), (float)MAXIMUM_BUFFER_SIZE);
         m_textureSize.x = size;
         m_textureSize.y = size;
         m_LODCount = (int)Mathf.Floor(Mathf.Log(size, 2f));
-        
         if (m_LODCount == 0)
         {
             return;
         }
-        
         bool isCommandBufferInvalid = false;
         if (m_HiZDepthTexture == null
             || (m_HiZDepthTexture.width != size
@@ -128,7 +125,7 @@ public class HiZBuffer : MonoBehaviour
             
             if (m_CommandBuffer != null)
             {
-                m_indirectRenderer.mainCam.RemoveCommandBuffer(m_CameraEvent, m_CommandBuffer);
+                mainCamera.RemoveCommandBuffer(m_CameraEvent, m_CommandBuffer);
             }
             
             m_CommandBuffer = new CommandBuffer();
@@ -164,7 +161,8 @@ public class HiZBuffer : MonoBehaviour
             }
             
             m_CommandBuffer.ReleaseTemporaryRT(m_Temporaries[m_LODCount - 1]);
-            m_indirectRenderer.mainCam.AddCommandBuffer(m_CameraEvent, m_CommandBuffer);
+            mainCamera.AddCommandBuffer(m_CameraEvent, m_CommandBuffer);
+            Debug.Log("bruh");
         }
     }
     public Shader debugShader = null;
@@ -176,7 +174,7 @@ public class HiZBuffer : MonoBehaviour
     public RenderTexture topDownView = null;
     private void OnRenderImage(RenderTexture source, RenderTexture destination)
     {
-        if (true)
+        if (false)
         {
             Camera.main.rect = new Rect(0.0f, 0.5f, 0.5f, 0.5f);
             Graphics.Blit(source, destination);
@@ -185,8 +183,8 @@ public class HiZBuffer : MonoBehaviour
             Camera.main.rect = new Rect(0.0f, 0.0f, 0.5f, 0.5f);
             m_debugMaterial.SetInt("_NUM", 0);
             m_debugMaterial.SetInt("_LOD", 0);
-            Debug.Log(m_HiZDepthTexture.width);
-            Debug.Log(m_HiZDepthTexture.height);
+            //Debug.Log(m_HiZDepthTexture.width);
+            //Debug.Log(m_HiZDepthTexture.height);
             Graphics.Blit(m_HiZDepthTexture, destination, m_debugMaterial);
 
             Camera.main.rect = new Rect(0.5f, 0.0f, 0.5f, 0.5f);

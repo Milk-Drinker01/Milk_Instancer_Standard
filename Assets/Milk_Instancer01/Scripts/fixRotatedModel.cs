@@ -102,11 +102,9 @@ public class fixRotatedModel : MonoBehaviour
     [ContextMenu("Fix Shit Newer")]
     public void correctNewer()
     {
-        // save the parent GO-s pos+rot
         Vector3 position = transform.position;
         Quaternion rotation = transform.rotation;
 
-        // move to the origin for combining
         transform.position = Vector3.zero;
         transform.rotation = Quaternion.identity;
 
@@ -170,7 +168,6 @@ public class fixRotatedModel : MonoBehaviour
             bruh.GetComponent<MeshFilter>().mesh = lodMesh;
         }
 
-        // restore the parent GO-s pos+rot
         transform.position = position;
         transform.rotation = rotation;
     }

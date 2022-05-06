@@ -56,7 +56,7 @@ public class MilkInstancer : MonoBehaviour
 
     [HideInInspector] public Camera mainCam;
 
-    public HiZBuffer hiZBuffer;
+    [HideInInspector] public HiZBuffer hiZBuffer;
 
     [Header("Compute Shaders")]
     public ComputeShader createDrawDataBufferCS;
@@ -65,6 +65,8 @@ public class MilkInstancer : MonoBehaviour
     public ComputeShader scanInstancesCS;
     public ComputeShader scanGroupSumsCS;
     public ComputeShader copyInstanceDataCS;
+    public Shader hizShader;
+    public Shader hizDebugShader;
 
     [Header("Data")]
     [ReadOnly] List<IndirectInstanceCSInput> instancesInputData = new List<IndirectInstanceCSInput>();
@@ -179,19 +181,11 @@ public class MilkInstancer : MonoBehaviour
 
     private void OnValidate()
     {
-        if (GetComponent<HiZBuffer>() != null)
-        {
-            hiZBuffer = GetComponent<HiZBuffer>();
-        }
         checkIfOnlyInstance();
     }
     float maxShadowDistance = 150;
     private void Awake()
     {
-        if (GetComponent<HiZBuffer>() != null)
-        {
-            hiZBuffer = GetComponent<HiZBuffer>();
-        }
         checkIfOnlyInstance();
         if (QualitySettings.renderPipeline == null)
         {
@@ -248,6 +242,10 @@ public class MilkInstancer : MonoBehaviour
     }
     private void OnEnable()
     {
+        if (GetComponent<ZoneManager>())
+        {
+            GetComponent<ZoneManager>().resetPos();
+        }
         //UnityEngine.Rendering.RenderPipelineManager.endCameraRendering += renderingDone;
         UnityEngine.Rendering.RenderPipelineManager.beginCameraRendering += preRender;
 #if UNITY_EDITOR
@@ -256,6 +254,7 @@ public class MilkInstancer : MonoBehaviour
     }
     private void OnDisable()
     {
+        ReleaseBuffers();
         //UnityEngine.Rendering.RenderPipelineManager.endCameraRendering -= renderingDone;
         UnityEngine.Rendering.RenderPipelineManager.beginCameraRendering -= preRender;
 #if UNITY_EDITOR
@@ -552,7 +551,11 @@ public class MilkInstancer : MonoBehaviour
     {
         initialized = InitializeRenderer(ref _instances);
     }
-    public uint[] cullingPerType;
+    [HideInInspector] public uint[] cullingPerType;
+#if UNITY_EDITOR
+    public RenderTexture editorDepthTexture;//black depth texture for editor depth
+    public RawImage hizPreview;
+#endif
     public bool InitializeRenderer(ref PaintablePrefab[] _instances)
     {
         if (!TryGetKernels())
@@ -572,13 +575,22 @@ public class MilkInstancer : MonoBehaviour
         }
         instanceShadowCastingModes = new bool[m_numberOfInstanceTypes];
         m_numberOfInstances = 0;
-        camPosition = Camera.main.transform.position;
         m_bounds.center = Vector3.zero;
         m_bounds.extents = Vector3.one * 10000;
-        hiZBuffer.enabled = true;
-        if (Application.isPlaying)
+        
+        if (Application.isPlaying && enableOcclusionCulling)
         {
+            if (!mainCam.TryGetComponent<HiZBuffer>(out hiZBuffer))
+            {
+                hiZBuffer = mainCam.gameObject.AddComponent<HiZBuffer>();
+                hiZBuffer.init(this, hizShader, hizDebugShader);
+            }
+            hiZBuffer.enabled = true;
             hiZBuffer.InitializeTexture();
+            if (hizPreview)
+            {
+                hizPreview.texture = hiZBuffer.Texture;
+            }
         }
         indirectMeshes = new IndirectRenderingMesh[m_numberOfInstanceTypes];
         
@@ -719,7 +731,7 @@ public class MilkInstancer : MonoBehaviour
         m_instancesArgsBuffer = new ComputeBuffer(m_numberOfInstanceTypes * NUMBER_OF_ARGS_PER_INSTANCE_TYPE, sizeof(uint), ComputeBufferType.IndirectArguments);
         m_instanceDataBuffer = new ComputeBuffer(m_numberOfInstances, computeShaderInputSize, ComputeBufferType.Default);
         m_instancesSortingData = new ComputeBuffer(m_numberOfInstances, computeSortingDataSize, ComputeBufferType.Default);
-        m_instancesSortingDataTemp = new ComputeBuffer(m_numberOfInstances, computeSortingDataSize, ComputeBufferType.Default);
+        //m_instancesSortingDataTemp = new ComputeBuffer(m_numberOfInstances, computeSortingDataSize, ComputeBufferType.Default);
         m_instancesMatrixRows01 = new ComputeBuffer(m_numberOfInstances, computeShaderDrawMatrixSize, ComputeBufferType.Default);
         m_instancesMatrixRows23 = new ComputeBuffer(m_numberOfInstances, computeShaderDrawMatrixSize, ComputeBufferType.Default);
         m_instancesMatrixRows45 = new ComputeBuffer(m_numberOfInstances, computeShaderDrawMatrixSize, ComputeBufferType.Default);
@@ -871,7 +883,6 @@ public class MilkInstancer : MonoBehaviour
         occlusionCS.SetFloat(_ShadowDistance, QualitySettings.shadowDistance);
         occlusionCS.SetFloat(_ShadowDistance, QualitySettings.shadowDistance);
         occlusionCS.SetFloat(_DetailCullingScreenPercentage, detailCullingPercentage);
-        occlusionCS.SetVector(_HiZTextureSize, hiZBuffer.TextureSize);
         occlusionCS.SetBuffer(m_occlusionKernelID, _InstanceDataBuffer, m_instanceDataBuffer);
         occlusionCS.SetBuffer(m_occlusionKernelID, _ArgsBuffer, m_instancesArgsBuffer);
         occlusionCS.SetBuffer(m_occlusionKernelID, _ShadowArgsBuffer, m_shadowArgsBuffer);
@@ -880,7 +891,20 @@ public class MilkInstancer : MonoBehaviour
 
         if (Application.isPlaying)
         {
+            occlusionCS.SetInt(_ShouldFrustumCull, enableFrustumCulling ? 1 : 0);
+            occlusionCS.SetVector(_HiZTextureSize, hiZBuffer.TextureSize);
             occlusionCS.SetTexture(m_occlusionKernelID, _HiZMap, hiZBuffer.Texture);
+        }
+        else
+        {
+#if UNITY_EDITOR
+            occlusionCS.SetInt(_ShouldFrustumCull, 0);
+            if (editorDepthTexture != null)
+            {
+                occlusionCS.SetVector(_HiZTextureSize, new Vector2(editorDepthTexture.width, editorDepthTexture.height));
+                occlusionCS.SetTexture(m_occlusionKernelID, _HiZMap, editorDepthTexture);
+            }
+#endif
         }
 
         occlusionCS.SetBuffer(m_occlusionKernelID, _SortingData, m_instancesSortingData);
@@ -1144,6 +1168,10 @@ public class MilkInstancer : MonoBehaviour
         ReleaseComputeBuffer(ref m_shadowCulledMatrixRows45);
 
         ReleaseComputeBuffer(ref occCulPerType);
+        ReleaseComputeBuffer(ref m_paddingBuffer);
+        ReleaseComputeBuffer(ref m_keysBuffer);
+        ReleaseComputeBuffer(ref m_tempBuffer);
+        ReleaseComputeBuffer(ref m_valuesBuffer);
     }
     private static void ReleaseComputeBuffer(ref ComputeBuffer _buffer)
     {
