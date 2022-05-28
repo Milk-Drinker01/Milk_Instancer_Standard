@@ -553,9 +553,9 @@ public class MilkInstancer : MonoBehaviour
     }
     [HideInInspector] public uint[] cullingPerType;
 #if UNITY_EDITOR
-    public RenderTexture editorDepthTexture;//black depth texture for editor depth
     public RawImage hizPreview;
 #endif
+    Texture2D blankDepthTexture;
     public bool InitializeRenderer(ref PaintablePrefab[] _instances)
     {
         if (!TryGetKernels())
@@ -578,6 +578,10 @@ public class MilkInstancer : MonoBehaviour
         m_bounds.center = Vector3.zero;
         m_bounds.extents = Vector3.one * 10000;
         
+        if (!hizShader)
+        {
+            enableOcclusionCulling = false;
+        }
         if (Application.isPlaying && enableOcclusionCulling)
         {
             if (!mainCam.TryGetComponent<HiZBuffer>(out hiZBuffer))
@@ -889,20 +893,31 @@ public class MilkInstancer : MonoBehaviour
         occlusionCS.SetBuffer(m_occlusionKernelID, _IsVisibleBuffer, m_instancesIsVisibleBuffer);
         occlusionCS.SetBuffer(m_occlusionKernelID, _ShadowIsVisibleBuffer, m_shadowsIsVisibleBuffer);
 
+        blankDepthTexture = Resources.Load("black") as Texture2D;
         if (Application.isPlaying)
         {
             occlusionCS.SetInt(_ShouldFrustumCull, enableFrustumCulling ? 1 : 0);
-            occlusionCS.SetVector(_HiZTextureSize, hiZBuffer.TextureSize);
-            occlusionCS.SetTexture(m_occlusionKernelID, _HiZMap, hiZBuffer.Texture);
+            if (enableOcclusionCulling)
+            {
+                occlusionCS.SetVector(_HiZTextureSize, hiZBuffer.TextureSize);
+                occlusionCS.SetTexture(m_occlusionKernelID, _HiZMap, hiZBuffer.Texture);
+            }
+            else if (blankDepthTexture)
+            {
+                occlusionCS.SetVector(_HiZTextureSize, Vector2.one);
+                occlusionCS.SetTexture(m_occlusionKernelID, _HiZMap, blankDepthTexture);
+            }
         }
         else
         {
 #if UNITY_EDITOR
+            
             occlusionCS.SetInt(_ShouldFrustumCull, 0);
-            if (editorDepthTexture != null)
+            if (blankDepthTexture != null)
             {
-                occlusionCS.SetVector(_HiZTextureSize, new Vector2(editorDepthTexture.width, editorDepthTexture.height));
-                occlusionCS.SetTexture(m_occlusionKernelID, _HiZMap, editorDepthTexture);
+                occlusionCS.SetVector(_HiZTextureSize, new Vector2(blankDepthTexture.width, blankDepthTexture.height));
+                occlusionCS.SetTexture(m_occlusionKernelID, _HiZMap, blankDepthTexture);
+                
             }
 #endif
         }
