@@ -2,6 +2,7 @@
 
 GPU Instancing in unity with culling and LOD
 
+NOTICE: This version of the project is to be archived. I am completelely refactoring consolidating all the projects into the main one - https://github.com/Milk-Drinker01/Milk_Instancer01
 
 NOTICE: THIS VERSION IS CURRENTLY OUTDATED VS THE URP AND HDRP VERSIONS. IT WILL BE UPDATED SOON
 
